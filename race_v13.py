@@ -1,14 +1,18 @@
 #!/usr/bin/python
 import RPi.GPIO as GPIO
 import time
+import datetime
 import pygame
 import random
 import math
 import sys
 from bike_v12 import Bike
-from route_v12 import Route
+from route_v13 import Route
 from groundmap_v2 import GroundMap
 
+
+# Race_v13 : use route_v13 which loads a gps file for the route
+#            write out a gpx file during the race
 
 pulse_count = 0
 currtm = time.time()
@@ -33,7 +37,8 @@ def InitDisplay():
   # initialisation
    pygame.init()
 
-   screen = pygame.display.set_mode((800,450)) # Set screen size of pygame window
+   screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+   #screen = pygame.display.set_mode((800,450)) # Set screen size of pygame window
    background = pygame.Surface(screen.get_size())  # Create empty pygame surface
    background.fill((255,255,255))     # Fill the background white color (red,green,blue)
    background = background.convert()  # Convert Surface to make blitting faster
@@ -404,7 +409,68 @@ def calculateZoom(computerbikes, playerbike, racelength):
    return spanzoom
 
 
-def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
+def generateGPXFilename():
+
+   # datetime object containing current date and time
+   now = datetime.datetime.now()
+
+   # YY-mm-ddHMS
+   dt_string = now.strftime("%Y-%m-%d-%H%M%S")
+   filename = "PiBike" + dt_string + ".gpx"
+
+   return filename
+
+def formatTime():
+   
+   now = datetime.datetime.now()
+
+   # 2022-11-14T20:27:23Z
+   dt_string = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+   return dt_string
+
+def openGPXFile():
+
+   fn = generateGPXFilename()
+   gpxfile = open(fn, "w")
+
+   gpxfile.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+   gpxfile.write("<gpx creator=\"PiBikeGPX\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd\" version=\"1.1\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+   gpxfile.write("<metadata>\n")
+
+   timestamp = formatTime()
+   gpxfile.write("  <time>" + timestamp + "</time>\n")
+   gpxfile.write(" </metadata>\n")
+   gpxfile.write(" <trk>\n")
+   gpxfile.write(" <name>Exercise Bike</name>\n")
+   gpxfile.write("  <type>17</type>\n")
+   gpxfile.write("  <trkseg>\n")
+
+   return gpxfile
+
+def writeGPX(gpxfile, latitude, longitude, elevation):
+
+    #  <trkpt lat="51.4473970" lon="-0.3392410">
+    #    <ele>-19.6</ele>
+    #    <time>2022-11-16T11:09:36Z</time>
+    # </trkpt>
+
+   timestamp = formatTime()
+   gpxfile.write("<trkpt lat=\"" + latitude + "\" lon=\"" + longitude + "\">\n")
+   gpxfile.write("   <ele>" + str(elevation) + "</ele>\n")
+   gpxfile.write("   <time>" + timestamp + "</time>\n")
+   gpxfile.write("</trkpt>\n")
+ 
+def writeGPXTrailer(gpxfile):
+   #   </trkseg>
+   # </trk>
+   #</gpx>
+
+   gpxfile.write("   </trkseg>\n")
+   gpxfile.write(" </trk>\n")
+   gpxfile.write("</gpx>\n")
+   
+
+def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route, gpxfile):
 
    global lastinterval
    global race_started
@@ -413,10 +479,13 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
 
    print ("Race starting")
 
+   # create the route profile and all the buildings etc
    groundmap = GroundMap(route)
 
+   # Present the user with a route preview for 5 seconds:
    screen.fill(white)
    screen.blit(write( str(Race_Length/1000) + "km", size=48), (10,20))
+   # draw the route in the middle of the screen and large with no bikes shown:
    groundmap.Draw(screen, 100, 300, 600, 600, playerBike, computerBikes, False)
    pygame.display.update() 
    time.sleep(5)
@@ -449,6 +518,7 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
    running = True
    currtime = time.time()
    lastinterval = 0
+   gpxcount = 0
 
    race_started = False
 
@@ -521,6 +591,14 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
 
       player_pot_energy = playerBike.GetMass() * player_height_diff * 3
       playerBike.AddEnergy(player_pot_energy)
+
+      # write out a line to the gpx file for each iteration:
+      if (race_started):
+         gpxcount = gpxcount + 1
+         if (gpxcount>70):
+            gpxcount = 0
+            posn = int(player_new_dist*1000)
+            writeGPX(gpxfile,route.GetLatitude(posn), route.GetLongitude(posn), route.GetHeight(posn))
  
       lastinterval=0
      
@@ -730,6 +808,7 @@ def main():
 
    raceLength = GetRaceLength(screen)
 
+   print ("got race lenght")
    while True:
       # id, name, image, power, sprint, rotation, attackdist, attackpower, attacklength
       computerBike1 = Bike(1, "Chris Frome", ineosbike, 7700, 2000, 0, random.randint(0, raceLength), 5000, 1000)
@@ -745,8 +824,12 @@ def main():
       raceStartTime = time.time()
 
       route = Route(raceLength)
+      print ("route")
 
-      run(screen, playerBike, computerBikes, raceLength, raceStartTime, route)
+      gpxfile = openGPXFile()
+      run(screen, playerBike, computerBikes, raceLength, raceStartTime, route, gpxfile)
+      writeGPXTrailer(gpxfile)
+      gpxfile.close()
 
       DisplayPodium(screen, playerBike, computerBikes, raceStartTime, route, time.time())
 
