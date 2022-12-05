@@ -1,15 +1,20 @@
 #!/usr/bin/python
+import os
 import RPi.GPIO as GPIO
 import time
+import datetime
 import pygame
 import random
 import math
 import sys
-from datetime import datetime
-from bike_v12 import Bike
-from route_v12 import Route
-from groundmap_v2 import GroundMap
+from bike_v13 import Bike
+from route_v14 import Route
+from groundmap_v3 import GroundMap
 
+
+# Race_v13 : use route_v13 which loads a gps file for the route
+#            write out a gpx file during the race
+#      v14 : Add a map to the race display
 
 pulse_count = 0
 currtm = time.time()
@@ -32,9 +37,11 @@ color_dark = (100,100,100)
 def InitDisplay():
 
   # initialisation
+   os.environ["DISPLAY"] = ":0.0"
    pygame.init()
 
-   screen = pygame.display.set_mode((800,450)) # Set screen size of pygame window
+   screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+   #screen = pygame.display.set_mode((800,450)) # Set screen size of pygame window
    background = pygame.Surface(screen.get_size())  # Create empty pygame surface
    background.fill((255,255,255))     # Fill the background white color (red,green,blue)
    background = background.convert()  # Convert Surface to make blitting faster
@@ -78,40 +85,6 @@ def left_button(channel):
 
 def right_button(channel):
     print ('right')
-
-def WriteGPXFileHeader(gpxfile)
-    # datetime object containing current date and time
-    now = datetime.now()
-
-    # dd/mm/YY H:M:S
-    dt_string = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    gpxfile.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
-    gpxfile.write("<gpx creator=\"PiBikeGPX\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd\" version=\"1.1\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
-    gpxfile.write("<metadata>\n")
-    gpxfile.write("  <time>")
-    gpxfile.write(dt_string)
-    gpxfile.write("</time>\n")
-    gpxfile.write(" </metadata>\n")
-    gpxfile.write(" <trk>\n")
-    gpxfile.write("  <name>PiBike test</name>\n")
-    gpxfile.write("  <type>17</type>\n")
-    gpxfile.write("  <trkseg>\n")
-
-def WriteGPXFileEntry(gpxfile, lat, long, elev, timestring)
-    gpxfile.write("   <trkpt lat=\")
-    gpxfile.write(lat)
-    gpxfile.write("\" lon=\")
-    gpxfile.write(lon)
-    gpxfile.write("\">\n")
-    gpxfile.write("    <ele>")
-    gpxfile.write(elev)
-    gpxfile.write("</ele>)\n")
-    gpxfile.write("    <time>")
-    gpxfile.write(timestring)
-    gpxfile.write("</time>\n")
-    gpxfile.write("   </trkpt>\n")
-
 
 
 def GetFinalLeaderboard(playerBike, computerBikes, winningTime):   
@@ -322,15 +295,6 @@ def DisplayPodium(screen, playerBike, computerBikes, raceStartTime, route, currt
    
 
 
-def bikeRotation (height_diff, dist_diff):
-   if height_diff==0 or dist_diff==0:
-      return 0
-
-   rot =  math.atan(height_diff/(dist_diff*1000))*180/3.14
-   rot = rot * -0.1
-
-   return rot
-
 def DrawLeaderboard(screen, leaderboard, route, currtime, x, y):
    race_pos=1
    leaderDist = leaderboard[0].GetDistance()
@@ -380,16 +344,20 @@ def plotBike(screen, bike, leftedge, route):
    if bikeX < -100:
       return
 
-   bikeY = 300 - height/4  + bike.GetId()*3
+   # the Y position is calculated based on the bike's height plus a small adjustment so that the bikes don't land right on top of each other
+   # The Y position starts at zero at the top of the screen, so a 'higher' bike needs a 'lower' Y value
+   bikeY = 300 - height*4  + bike.GetId()*3
+   if (bikeY <0):
+      bikeY = 0
    #print (dist, height, bikeY)
 
    scalefactor = zoom/40.0
-   width = int(scalefactor*113)
-   height = int(scalefactor*80)
-   #print (scalefactor, width, height)
+   swidth = int(scalefactor*113)
+   sheight = int(scalefactor*80)
+   #print (scalefactor, swidth, sheight)
    bikepic = bike.GetImage()
-   scaled_bike = pygame.transform.scale(bikepic, (width,height) )
-   rotated_bike = pygame.transform.rotate(scaled_bike, bike.GetRotation() )
+   scaled_bike = pygame.transform.scale(bikepic, (swidth,sheight) )
+   rotated_bike = pygame.transform.rotate(scaled_bike, bike.GetRotationAngle() )
    screen.blit(rotated_bike, (bikeX,bikeY)) 
 
 
@@ -402,7 +370,7 @@ def plotScenery(screen, dist, leftedge, pic, picwidth, picheight, route):
    scalefactor = zoom/40.0
    scalewidth = int(scalefactor*picwidth)
    scaleheight = int(scalefactor*picheight)
-   sceneY = 300 - height/4 - scaleheight
+   sceneY = 300 - height*4 - scaleheight
    scaled_pic = pygame.transform.scale(pic, (scalewidth,scaleheight) )
    screen.blit(scaled_pic, (sceneX,sceneY)) 
 
@@ -439,19 +407,174 @@ def calculateZoom(computerbikes, playerbike, racelength):
    return spanzoom
 
 
-def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
+def generateGPXFilename():
+
+   # datetime object containing current date and time
+   now = datetime.datetime.now()
+
+   # YY-mm-ddHMS
+   dt_string = now.strftime("%Y-%m-%d-%H%M%S")
+   filename = "PiBike" + dt_string + ".gpx"
+
+   return filename
+
+def formatTime():
+   
+   now = datetime.datetime.now()
+
+   # 2022-11-14T20:27:23Z
+   dt_string = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+   return dt_string
+
+def openGPXFile():
+
+   fn = generateGPXFilename()
+   gpxfile = open(fn, "w")
+
+   gpxfile.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+   gpxfile.write("<gpx creator=\"PiBikeGPX\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:schemaLocation=\"http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd\" version=\"1.1\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+   gpxfile.write("<metadata>\n")
+
+   timestamp = formatTime()
+   gpxfile.write("  <time>" + timestamp + "</time>\n")
+   gpxfile.write(" </metadata>\n")
+   gpxfile.write(" <trk>\n")
+   gpxfile.write(" <name>Exercise Bike</name>\n")
+   gpxfile.write("  <type>17</type>\n")
+   gpxfile.write("  <trkseg>\n")
+
+   return gpxfile
+
+def writeGPX(gpxfile, latitude, longitude, elevation):
+
+    #  <trkpt lat="51.4473970" lon="-0.3392410">
+    #    <ele>-19.6</ele>
+    #    <time>2022-11-16T11:09:36Z</time>
+    # </trkpt>
+
+   timestamp = formatTime()
+   gpxfile.write("<trkpt lat=\"" + latitude + "\" lon=\"" + longitude + "\">\n")
+   gpxfile.write("   <ele>" + str(elevation) + "</ele>\n")
+   gpxfile.write("   <time>" + timestamp + "</time>\n")
+   gpxfile.write("</trkpt>\n")
+ 
+def writeGPXTrailer(gpxfile):
+   #   </trkseg>
+   # </trk>
+   #</gpx>
+
+   gpxfile.write("   </trkseg>\n")
+   gpxfile.write(" </trk>\n")
+   gpxfile.write("</gpx>\n")
+  
+
+def calculateHillEnergy(gradient, mass):
+    return mass * gradient * -1.2
+
+
+def plotLatLongDot(screen, lat, long, colour, minLat, minLong, routeEW, routeNS, screenHeight, screenTop, screenWidth, screenLeft):
+
+   #print lat, long, minLat, minLong, routeEW, routeNS, screenHeight, screenHeight, screenTop, screenWidth, screenLeft
+   x = convertLongToX(long, minLong, routeEW, screenWidth, screenLeft)
+   y = convertLatToY(lat, minLat, routeNS, screenHeight, screenTop)
+   pygame.draw.circle(screen, colour, (x, y), 3)
+   
+
+def convertLatToY(lat, minLat, routeNS, screenHeight, screenTop):
+   y = screenTop + screenHeight - ((float(lat) - minLat) / routeNS) * screenHeight
+   return int(y)
+
+def convertLongToX(long, minLong, routeEW, screenWidth, screenLeft):
+   x = ((float(long) - minLong) / routeEW) * screenWidth + screenLeft
+   return int(x)
+
+def drawMap(screen, route, computerBikes, playerBike):
+
+   screenHeight = 140
+   screenWidth = 290
+   screenLeftEdge = 500
+   screenTopEdge = 50
+   minLat = route.getMinLat()
+   maxLat = route.getMaxLat()
+   minLong = route.getMinLong()
+   maxLong = route.getMaxLong()
+   pygame.draw.rect(screen, grey, (screenLeftEdge, screenTopEdge, screenWidth+10, screenHeight+10) )
+   pygame.draw.rect(screen, white, (screenLeftEdge+5, screenTopEdge+5, screenWidth, screenHeight) )
+
+   routeEW = (maxLong - minLong)
+   routeNS = (maxLat - minLat)
+   
+
+   i = 0
+   prevX = -1
+   prevY = -1
+
+   while (i < route.GetLength()):
+      x = convertLongToX(route.GetLongitude(i), minLong, routeEW, screenWidth, screenLeftEdge)
+      y = convertLatToY(route.GetLatitude(i), minLat, routeNS, screenHeight, screenTopEdge)
+
+      if (prevX>0):
+         pygame.draw.line(screen, blue, (prevX, prevY), (x,y))
+
+      prevX = x
+      prevY = y
+
+      i = i+100
+
+   # Draw the bikes:
+   for b in computerBikes:
+      #print b.GetDistance(), route.GetLatitude(int(b.GetDistance()))
+      blat = route.GetLatitude(int(b.GetDistance()*1000))
+      blong = route.GetLongitude(int(b.GetDistance()*1000))
+      plotLatLongDot(screen, blat, blong, blue, minLat, minLong, routeEW, routeNS, screenHeight, screenTopEdge, screenWidth, screenLeftEdge)
+
+
+   plat = route.GetLatitude(int(playerBike.GetDistance()*1000))
+   plong = route.GetLongitude(int(playerBike.GetDistance()*1000))
+   plotLatLongDot(screen, plat, plong, red, minLat, minLong, routeEW, routeNS, screenHeight, screenTopEdge, screenWidth, screenLeftEdge)
+
+
+def calcGradient(route, dist):
+
+   prevdist = 0
+   distdiff = 0
+   if (dist>5):
+      prevdist = dist-5
+      distdiff = 5
+
+   prevHeight = route.GetHeight(prevdist)
+   currHeight = route.GetHeight(dist)
+   heightdiff = currHeight - prevHeight
+   gradient = bikeRotation(heightdiff, distdiff)
+   print "calc gradient ", prevHeight, currHeight, heightdiff, distdiff, gradient
+   return gradient
+
+def bikeRotation (height_diff, dist_diff):
+   if height_diff==0 or dist_diff==0:
+      return 0
+
+   rot =  (height_diff/(dist_diff))*100
+
+   return rot
+
+
+
+def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route, gpxfile):
 
    global lastinterval
    global race_started
    global zoom
-   Testing = False
+   Testing = True #False
 
    print ("Race starting")
 
+   # create the route profile and all the buildings etc
    groundmap = GroundMap(route)
 
+   # Present the user with a route preview for 5 seconds:
    screen.fill(white)
    screen.blit(write( str(Race_Length/1000) + "km", size=48), (10,20))
+   # draw the route in the middle of the screen and large with no bikes shown:
    groundmap.Draw(screen, 100, 300, 600, 600, playerBike, computerBikes, False)
    pygame.display.update() 
    time.sleep(5)
@@ -484,6 +607,7 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
    running = True
    currtime = time.time()
    lastinterval = 0
+   gpxcount = 0
 
    race_started = False
 
@@ -533,14 +657,17 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
 
             b.Update(leaderboard, timediff)
 
-            comp_new_dist = b.GetDistance()
-            comp_new_height = route.GetHeight(int(comp_new_dist*1000))
-            comp_height_diff = comp_height - comp_new_height
-            comp_dist_diff= comp_new_dist - comp_dist
-            b.SetRotation(bikeRotation(comp_height_diff, comp_dist_diff))
+            #comp_new_dist = b.GetDistance()
+            #comp_new_height = route.GetHeight(int(comp_new_dist*1000))
+            #comp_height_diff = comp_height - comp_new_height
+            #comp_dist_diff= comp_new_dist - comp_dist
 
-            comp_pot_energy = b.GetMass() * comp_height_diff * 3
+            bGrad = calcGradient(route, int(b.GetDistance()*1000))
+            b.SetRotation(bGrad)
+
+            comp_pot_energy = calculateHillEnergy(bGrad, b.GetMass())
             b.AddEnergy(comp_pot_energy)
+
 
       player_dist = playerBike.GetDistance()
       player_height = route.GetHeight(int(player_dist*1000))
@@ -550,12 +677,25 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
       
       player_new_dist = playerBike.GetDistance()
       player_new_height = route.GetHeight(int(player_new_dist*1000))
-      player_height_diff = player_height - player_new_height
-      player_dist_diff = player_new_dist - player_dist
-      playerBike.SetRotation(bikeRotation(player_height_diff,player_dist_diff))
+      #player_height_diff = player_height - player_new_height
+      #player_dist_diff = player_new_dist - player_dist
+      #playerBike.SetRotation(bikeRotation(player_height_diff,player_dist_diff))
 
-      player_pot_energy = playerBike.GetMass() * player_height_diff * 3
+      pGrad = calcGradient(route, int(playerBike.GetDistance()*1000))
+      playerBike.SetRotation(bGrad)
+
+      player_pot_energy = calculateHillEnergy(pGrad, playerBike.GetMass())
+      #print ("height diff ", player_height_diff, " pot energy=", player_pot_energy, " curr energy=", playerBike.GetEnergy())
+      
       playerBike.AddEnergy(player_pot_energy)
+
+      # write out a line to the gpx file for each iteration:
+      if (race_started):
+         gpxcount = gpxcount + 1
+         if (gpxcount>70):
+            gpxcount = 0
+            posn = int(player_new_dist*1000)
+            writeGPX(gpxfile,route.GetLatitude(posn), route.GetLongitude(posn), route.GetHeight(posn))
  
       lastinterval=0
      
@@ -593,6 +733,10 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
       displayStr = txt.format(player_new_dist) + "km"
       screen.blit(write(displayStr), (100,430))
 
+      txt = "Gradient : {:.1f}"
+      displayStr = txt.format(pGrad) + "%"
+      screen.blit(write(displayStr), (100,450))
+
       raceElapsedTime = currtime - RaceStartTime
       m, s = divmod(raceElapsedTime, 60)
       h, m = divmod(m, 60)
@@ -624,6 +768,9 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
       left = leftedge * 1000
       
       routelen = route.GetLength()
+
+      # Draw the Map:
+      drawMap(screen, route, computerBikes, playerBike)
 
       # Draw the scenery:
       groundpos =left-(screenwidth/4)                 # start from just off the left edge
@@ -678,11 +825,12 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
 
          # Draw the ground green with a red line at the finish
          if int(groundpos) == route.GetLength():
-            pygame.draw.rect(screen, red, (plotX(groundpos-left), 300-(groundheight/4), 40, 20)) 
+            pygame.draw.rect(screen, red, (plotX(groundpos-left), 300-(groundheight*4), 40, 20)) 
          else:
-            pygame.draw.rect(screen, green, (plotX(groundpos-left), 300-(groundheight/4), 40, 20)) 
+            pygame.draw.rect(screen, green, (plotX(groundpos-left), 300-(groundheight*4), 40, 20)) 
         
          groundpos = groundpos + 1
+
 
       # Draw the bikes:
       for b in computerBikes:
@@ -694,12 +842,14 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route):
       else:
          plotBike(screen, playerBike, leftedge*1000, route)
 
+      # Draw the 'Aero' indicator:
       aero = playerBike.GetAeroFactor()
       aerobarlength = aero * 100
       
       pygame.draw.rect(screen, black, (197, 38, 106, 24)) 
       pygame.draw.rect(screen, green, (200, 40, aerobarlength, 20)) 
-      
+     
+
       pygame.display.flip()
 
       # record finish time for each rider:
@@ -765,9 +915,6 @@ def main():
 
    raceLength = GetRaceLength(screen)
 
-   gpxfile = open("demo.gpx", "a")
-   WriteGPXFileHeader(gpxfile)
-
    while True:
       # id, name, image, power, sprint, rotation, attackdist, attackpower, attacklength
       computerBike1 = Bike(1, "Chris Frome", ineosbike, 7700, 2000, 0, random.randint(0, raceLength), 5000, 1000)
@@ -784,7 +931,10 @@ def main():
 
       route = Route(raceLength)
 
-      run(screen, playerBike, computerBikes, raceLength, raceStartTime, route)
+      gpxfile = openGPXFile()
+      run(screen, playerBike, computerBikes, raceLength, raceStartTime, route, gpxfile)
+      writeGPXTrailer(gpxfile)
+      gpxfile.close()
 
       DisplayPodium(screen, playerBike, computerBikes, raceStartTime, route, time.time())
 
