@@ -1,2 +1,2 @@
-python /home/pi/bike/race_v13.py>>race.log &
+python3 /home/pi/bike/race_v17.py>>race.log &
 
