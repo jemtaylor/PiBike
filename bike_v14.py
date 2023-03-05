@@ -20,7 +20,7 @@ class Bike:
       self.sprint = sprint
       self.rotation = rotation
       self.aerofactor = 0.0
-      self.AirResistForce=0.08
+      self.AirResistForce=0.1
       self.AttackDistance = attackdist
       self.AttackLength = attacklength
       self.AttackPower = attackpower
@@ -141,7 +141,9 @@ class Bike:
             if self.GetDistance()*1000 > route.GetLength() * 0.9:
                kinecticEnergy = kinecticEnergy + self.GetSprint()*timediff
       else:
-         kinecticEnergy = kinecticEnergy + player_energy
+         # only add energy if the bike is going under 60km/h - above this you shouldn't be able to add energy with the pedals!
+         if bikespeed < 16.66:
+            kinecticEnergy = kinecticEnergy + player_energy
 
 
       air_resistance = bikespeed * bikespeed * self.AirResistForce
@@ -173,7 +175,7 @@ class Bike:
       kinecticEnergy = kinecticEnergy - air_resist_energy
 
       # ...and friction, which will be proportional to speed:
-      friction = bikespeed * 0.1
+      friction = bikespeed * 0.15
       friction_energy = friction / timediff
       kinecticEnergy = kinecticEnergy - friction_energy
 

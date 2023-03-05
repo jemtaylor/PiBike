@@ -293,8 +293,12 @@ def StravaUpload(screen, gpxfile):
 
    if choice==True:
       print("upload to strava")
-      s = Strava()
-      s.uploadGPXfile(gpxfile.name)
+      try:
+         s = Strava()
+         s.uploadGPXfile(gpxfile.name)
+      except:
+         type, value, traceback = sys.exc_info()
+         print('Error uploading ' + value.strerror) 
    else:
       print("no strava upload")
 
@@ -773,14 +777,18 @@ def run(screen, playerBike, computerBikes, Race_Length, RaceStartTime, route, gp
 
       txt = "Speed {:.2f} km/h"
       displayStr = txt.format(playerBike.GetSpeed())
-      screen.blit(write(displayStr), (10,390))
+      screen.blit(write(displayStr), (10,370))
 
       txt = "Height {:.2f}"
       displayStr = txt.format(round(playerBike.GetHeight(),1))+"m"
-      screen.blit(write(displayStr), (10,410))
+      screen.blit(write(displayStr), (10,390))
 
       txt = "Distance : {:.2f}"
       displayStr = txt.format(playerBike.GetDistance()) + "km"
+      screen.blit(write(displayStr), (10,410))
+
+      txt = "To go :   {:.2f}"
+      displayStr = txt.format((route.GetLength()-playerBike.GetDistance()*1000)/1000) + "km"
       screen.blit(write(displayStr), (10,430))
 
       txt = "Gradient : {:.1f}"
@@ -987,7 +995,7 @@ def main():
       computerBike4 = Bike(4, "Vincenzo Nibali", treksegafredobike, 870, 1000, 0, random.randint(0, raceLength), 500, 1000)
       computerBike5 = Bike(5, "Tadej Pogacar", uaebike, 940, 1000, 0, random.randint(0, raceLength), 500, 1000)
       computerBike6 = Bike(6, "Mathieu vd Poel", alpecinfenixbike, 900, 1000, 0, random.randint(0, raceLength), 500, 1000)
-      playerBike = Bike(7, "Player", redbike, 650, 0, 0, 0, 0, 0)
+      playerBike = Bike(7, "Player", redbike, 600, 0, 0, 0, 0, 0)
 
       computerBikes = [ computerBike1, computerBike2, computerBike3, computerBike4, computerBike5, computerBike6]
 
